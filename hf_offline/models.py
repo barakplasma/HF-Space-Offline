@@ -1,0 +1,145 @@
+"""Model downloading with gated model support."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+from huggingface_hub import HfApi, ModelCard, snapshot_download
+from rich.console import Console
+
+console = Console()
+
+
+@dataclass
+class ModelInfo:
+    """Metadata about a downloaded model."""
+
+    model_id: str
+    owner: str
+    name: str
+    pipeline_tag: str = ""
+    library_name: str = ""
+    license: str = ""
+    tags: list[str] = field(default_factory=list)
+    card_text: str = ""
+    card_meta: dict = field(default_factory=dict)
+    gated: bool = False
+    files: list[str] = field(default_factory=list)
+    local_dir: Path | None = None
+    size_bytes: int = 0
+
+
+def fetch_model_info(model_id: str, token: str | None = None) -> ModelInfo:
+    """Fetch model metadata from HuggingFace Hub."""
+    api = HfApi(token=token)
+    raw = api.model_info(repo_id=model_id, token=token)
+
+    owner, name = model_id.split("/", 1) if "/" in model_id else ("", model_id)
+
+    # Get model card
+    card_text = ""
+    card_meta = {}
+    try:
+        card = ModelCard.load(model_id, token=token)
+        card_text = card.text or ""
+        card_meta = card.data.to_dict() if card.data else {}
+    except Exception:
+        pass
+
+    gated = getattr(raw, "gated", False)
+    if gated and gated != "false":
+        gated = True
+    else:
+        gated = False
+
+    return ModelInfo(
+        model_id=model_id,
+        owner=owner,
+        name=name,
+        pipeline_tag=getattr(raw, "pipeline_tag", "") or "",
+        library_name=getattr(raw, "library_name", "") or "",
+        license=card_meta.get("license", ""),
+        tags=getattr(raw, "tags", []) or [],
+        card_text=card_text,
+        card_meta=card_meta,
+        gated=gated,
+    )
+
+
+def download_model(
+    model_id: str,
+    dest: Path,
+    token: str | None = None,
+) -> tuple[Path, ModelInfo]:
+    """Download a model's files to a local directory.
+
+    The model is placed in dest/models/{model_name}/ so that
+    this directory can be mounted as a PVC in Kubernetes.
+    """
+    info = fetch_model_info(model_id, token)
+
+    if info.gated and not token:
+        console.print(
+            f"[bold red]Model {model_id} is gated![/] "
+            "You must provide --hf-token to download it."
+        )
+        raise SystemExit(1)
+
+    if info.gated:
+        console.print(
+            f"[yellow]Model {model_id} is gated. "
+            "Using provided token for access.[/]"
+        )
+
+    # Sanitize model name for filesystem
+    safe_name = model_id.replace("/", "--")
+    model_dir = dest / "models" / safe_name
+
+    console.print(f"[bold blue]Downloading model:[/] {model_id}")
+    downloaded = snapshot_download(
+        repo_id=model_id,
+        repo_type="model",
+        local_dir=str(model_dir),
+        token=token,
+    )
+    console.print(f"[green]Model downloaded to:[/] {downloaded}")
+
+    info.local_dir = Path(downloaded)
+
+    # Catalog downloaded files
+    info.files = [
+        str(p.relative_to(model_dir))
+        for p in model_dir.rglob("*")
+        if p.is_file()
+    ]
+
+    # Rough size estimate
+    info.size_bytes = sum(
+        p.stat().st_size for p in model_dir.rglob("*") if p.is_file()
+    )
+
+    return Path(downloaded), info
+
+
+def write_model_manifest(info: ModelInfo, dest: Path) -> Path:
+    """Write a YAML manifest describing the model for the bundle."""
+    manifest = {
+        "model_id": info.model_id,
+        "pipeline_tag": info.pipeline_tag,
+        "library_name": info.library_name,
+        "license": info.license,
+        "gated": info.gated,
+        "tags": info.tags,
+        "file_count": len(info.files),
+        "size_bytes": info.size_bytes,
+    }
+
+    manifest_path = dest / "models" / "manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        yaml.dump(manifest, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
+    return manifest_path
