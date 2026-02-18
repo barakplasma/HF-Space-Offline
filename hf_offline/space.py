@@ -73,10 +73,16 @@ def fetch_space_metadata(space_id: str, token: str | None = None) -> SpaceInfo:
     sdk = getattr(space_info_raw, "sdk", None) or raw_meta.get("sdk", "gradio")
     sdk = sdk.lower()
 
-    # Detect models referenced in metadata
-    models = raw_meta.get("models", [])
-    if isinstance(models, str):
-        models = [models]
+    # Collect models from both the HF Hub API response and the README frontmatter,
+    # deduplicating while preserving order (API list is authoritative).
+    api_models = list(getattr(space_info_raw, "models", None) or [])
+    readme_models = raw_meta.get("models", [])
+    if isinstance(readme_models, str):
+        readme_models = [readme_models]
+    models = api_models[:]
+    for m in readme_models:
+        if m not in models:
+            models.append(m)
 
     info = SpaceInfo(
         space_id=space_id,
@@ -140,9 +146,10 @@ def scan_for_model_refs(space_dir: Path) -> list[str]:
         # from_pretrained("org/model")
         r'from_pretrained\s*\(\s*["\']([a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+)["\']',
         # pipeline("task", model="org/model")
-        r'model\s*=\s*["\']([a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+)["\']',
-        # HfApi().model_info("org/model")
-        r'repo_id\s*=\s*["\']([a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+)["\']',
+        r'\bmodel\s*=\s*["\']([a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+)["\']',
+        # model_info(repo_id="org/model") or model_download(repo_id=...)
+        # Restrict to model_info / hf_hub_download / snapshot_download context
+        r'(?:model_info|hf_hub_download|snapshot_download)\s*\([^)]*repo_id\s*=\s*["\']([a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+)["\']',
     ]
 
     found = set()

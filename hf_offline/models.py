@@ -124,7 +124,11 @@ def download_model(
 
 
 def write_model_manifest(info: ModelInfo, dest: Path) -> Path:
-    """Write a YAML manifest describing the model for the bundle."""
+    """Write a YAML manifest describing the model inside its own subdirectory.
+
+    Each model gets a manifest at models/<safe-name>/manifest.yaml so that
+    multiple models can coexist without overwriting each other.
+    """
     manifest = {
         "model_id": info.model_id,
         "pipeline_tag": info.pipeline_tag,
@@ -136,7 +140,8 @@ def write_model_manifest(info: ModelInfo, dest: Path) -> Path:
         "size_bytes": info.size_bytes,
     }
 
-    manifest_path = dest / "models" / "manifest.yaml"
+    safe_name = info.model_id.replace("/", "--")
+    manifest_path = dest / "models" / safe_name / "manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         yaml.dump(manifest, default_flow_style=False, sort_keys=False),
