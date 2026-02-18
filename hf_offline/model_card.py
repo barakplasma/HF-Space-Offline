@@ -55,7 +55,7 @@ def render_model_card_html(
         pipeline_tag=_esc(card_meta.get("pipeline_tag", "")),
         license=_esc(card_meta.get("license", "unknown")),
         library=_esc(card_meta.get("library_name", "")),
-        tags=", ".join(card_meta.get("tags", [])),
+        tags=", ".join(str(t) for t in card_meta.get("tags", [])),
         body=body_html,
         meta_yaml=_esc(yaml.dump(card_meta, default_flow_style=False, sort_keys=False)),
     )
