@@ -39,11 +39,18 @@ def render_model_card_html(
     # Build metadata badges
     badges = _build_badges(card_meta)
 
+    # Build optional space reference line
+    space_ref_html = (
+        f'<div class="space-ref">Bundled with Space: {_esc(space_id)}</div>'
+        if space_id
+        else ""
+    )
+
     # Build the full HTML page
     html = _HTML_TEMPLATE.format(
         model_id=_esc(model_id),
         title=_esc(card_meta.get("title", model_id)),
-        space_id=_esc(space_id),
+        space_ref=space_ref_html,
         badges=badges,
         pipeline_tag=_esc(card_meta.get("pipeline_tag", "")),
         license=_esc(card_meta.get("license", "unknown")),
@@ -238,9 +245,7 @@ _HTML_TEMPLATE = """\
   <header>
     <h1>{title}</h1>
     <div class="model-id">{model_id}</div>
-    {{% if space_id %}}
-    <div class="space-ref">Bundled with Space: {space_id}</div>
-    {{% endif %}}
+    {space_ref}
     <div class="badges">
       {badges}
     </div>
