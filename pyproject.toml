@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hf-offline"
+version = "0.1.0"
+description = "Download HuggingFace Spaces for offline deployment on air-gapped Kubernetes GPU clusters"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "click>=8.0",
+    "huggingface-hub>=0.20",
+    "pyyaml>=6.0",
+    "requests>=2.28",
+    "markdown>=3.5",
+    "rich>=13.0",
+]
+
+[project.scripts]
+hf-offline = "hf_offline.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1",
+]
