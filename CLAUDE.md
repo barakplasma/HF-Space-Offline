@@ -69,3 +69,9 @@ The generated chart includes:
 - rich.console for user-facing output
 - No Jinja2 — Helm templates are Go template strings written directly from Python
 - YAML frontmatter parsing for HF README metadata
+
+## CI rules
+
+- Treat CI warnings as failures: fix them, don't ignore them. Check the Actions run annotations, not just green/red.
+- Pin runner images (e.g. `ubuntu-24.04`, not `ubuntu-latest`) and use action versions that run on the current Node runtime.
+- Validate workflow YAML (`yaml.safe_load`) after every edit to `.github/workflows/`.
