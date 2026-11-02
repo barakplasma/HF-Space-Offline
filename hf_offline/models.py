@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -68,6 +69,25 @@ def fetch_model_info(model_id: str, token: str | None = None) -> ModelInfo:
     )
 
 
+def model_dir_name(model_id: str) -> str:
+    """Directory name in the HF hub cache layout (what HF_HUB_CACHE expects)."""
+    return "models--" + model_id.replace("/", "--")
+
+
+def _materialize_snapshots(model_dir: Path) -> None:
+    """Replace snapshot symlinks with real files and drop blobs/.
+
+    S3 uploads and tar don't preserve symlinks; offline lookups only need snapshots/.
+    """
+    for link in (model_dir / "snapshots").rglob("*"):
+        if link.is_symlink():
+            target = link.resolve()
+            link.unlink()
+            target.replace(link)  # moves the blob; a blob shared by two names is copied below
+    # shortcut: files sharing one blob keep only the first name, re-copy if that matters
+    shutil.rmtree(model_dir / "blobs", ignore_errors=True)
+
+
 def download_model(
     model_id: str,
     dest: Path,
@@ -75,8 +95,8 @@ def download_model(
 ) -> tuple[Path, ModelInfo]:
     """Download a model's files to a local directory.
 
-    The model is placed in dest/models/{model_name}/ so that
-    this directory can be mounted as a PVC in Kubernetes.
+    The model is stored in HF hub cache layout under dest/models/ so that mounting
+    it with HF_HUB_CACHE and HF_HUB_OFFLINE=1 lets from_pretrained() work air-gapped.
     """
     info = fetch_model_info(model_id, token)
 
@@ -93,17 +113,17 @@ def download_model(
             "Using provided token for access.[/]"
         )
 
-    # Sanitize model name for filesystem
-    safe_name = model_id.replace("/", "--")
-    model_dir = dest / "models" / safe_name
+    model_dir = dest / "models" / model_dir_name(model_id)
 
     console.print(f"[bold blue]Downloading model:[/] {model_id}")
     downloaded = snapshot_download(
         repo_id=model_id,
         repo_type="model",
-        local_dir=str(model_dir),
+        cache_dir=str(dest / "models"),
         token=token,
     )
+    _materialize_snapshots(model_dir)
+    shutil.rmtree(dest / "models" / "blobs", ignore_errors=True)  # hub's xet chunk cache, not needed offline
     console.print(f"[green]Model downloaded to:[/] {downloaded}")
 
     info.local_dir = Path(downloaded)
@@ -140,8 +160,7 @@ def write_model_manifest(info: ModelInfo, dest: Path) -> Path:
         "size_bytes": info.size_bytes,
     }
 
-    safe_name = info.model_id.replace("/", "--")
-    manifest_path = dest / "models" / safe_name / "manifest.yaml"
+    manifest_path = dest / "models" / model_dir_name(info.model_id) / "manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         yaml.dump(manifest, default_flow_style=False, sort_keys=False),

@@ -270,7 +270,7 @@ class TestWriteModelManifest:
         info = self._make_model_info("google/gemma-2-27b-it")
         path = write_model_manifest(info, tmp_path)
 
-        assert path == tmp_path / "models" / "google--gemma-2-27b-it" / "manifest.yaml"
+        assert path == tmp_path / "models" / "models--google--gemma-2-27b-it" / "manifest.yaml"
         assert path.exists()
 
     def test_two_models_do_not_overwrite_each_other(self, tmp_path):
@@ -284,10 +284,10 @@ class TestWriteModelManifest:
         write_model_manifest(info2, tmp_path)
 
         m1 = yaml.safe_load(
-            (tmp_path / "models" / "google--gemma-2-27b-it" / "manifest.yaml").read_text()
+            (tmp_path / "models" / "models--google--gemma-2-27b-it" / "manifest.yaml").read_text()
         )
         m2 = yaml.safe_load(
-            (tmp_path / "models" / "meta-llama--Llama-3-8b" / "manifest.yaml").read_text()
+            (tmp_path / "models" / "models--meta-llama--Llama-3-8b" / "manifest.yaml").read_text()
         )
         assert m1["model_id"] == "google/gemma-2-27b-it"
         assert m2["model_id"] == "meta-llama/Llama-3-8b"

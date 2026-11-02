@@ -165,7 +165,7 @@ class TestManifestContent:
 
     def test_manifest_model_path_uses_double_dash(self, tmp_path):
         manifest = self._manifest(tmp_path)
-        assert manifest["models"][0]["path"] == "models/google--gemma-2-27b-it"
+        assert manifest["models"][0]["path"] == "models/models--google--gemma-2-27b-it"
 
     def test_manifest_deploy_steps_present(self, tmp_path):
         manifest = self._manifest(tmp_path)

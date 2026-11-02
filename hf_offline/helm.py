@@ -25,6 +25,7 @@ def generate_chart(
     gpu_type: str = "nvidia.com/gpu",
     storage_size: str = "50Gi",
     image_registry: str = "localhost:5000",
+    env: dict[str, str] | None = None,
 ) -> Path:
     """Generate a complete Helm chart for the space deployment.
 
@@ -44,7 +45,7 @@ def generate_chart(
     model_ids = model_ids or space_info.models
 
     # Compute the model subpaths for the init container to sync
-    model_subpaths = [mid.replace("/", "--") for mid in model_ids]
+    model_subpaths = ["models--" + mid.replace("/", "--") for mid in model_ids]
 
     chart_meta = {
         "name": safe_name,
@@ -54,6 +55,7 @@ def generate_chart(
         "image_registry": image_registry,
         "model_ids": model_ids,
         "model_subpaths": model_subpaths,
+        "env": dict(env or {}),
         "s3_endpoint": s3_endpoint,
         "s3_bucket": s3_bucket,
         "s3_prefix": s3_prefix,
@@ -172,7 +174,7 @@ def _write_values_yaml(chart_dir: Path, meta: dict) -> None:
 
         "hfToken": "",
 
-        "env": {},
+        "env": meta.get("env", {}),
 
         "modelCard": {
             "serve": {
@@ -318,6 +320,10 @@ spec:
               value: {{ .Values.models.mountPath }}
             - name: HF_HOME
               value: {{ .Values.models.mountPath }}
+            - name: HF_HUB_CACHE
+              value: {{ .Values.models.mountPath }}
+            - name: HF_HUB_OFFLINE
+              value: "1"
             {{- if .Values.hfToken }}
             - name: HF_TOKEN
               valueFrom:
