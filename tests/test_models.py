@@ -180,7 +180,7 @@ class TestWriteModelManifest:
         from hf_offline.models import write_model_manifest
         info = _make_model_info("google/gemma-2-27b-it")
         path = write_model_manifest(info, tmp_path)
-        assert path == tmp_path / "models" / "google--gemma-2-27b-it" / "manifest.yaml"
+        assert path == tmp_path / "models" / "models--google--gemma-2-27b-it" / "manifest.yaml"
 
     def test_manifest_file_exists(self, tmp_path):
         from hf_offline.models import write_model_manifest
@@ -230,8 +230,8 @@ class TestWriteModelManifest:
         write_model_manifest(info1, tmp_path)
         write_model_manifest(info2, tmp_path)
 
-        p1 = tmp_path / "models" / "google--gemma-2-27b-it" / "manifest.yaml"
-        p2 = tmp_path / "models" / "meta-llama--Llama-3-8b" / "manifest.yaml"
+        p1 = tmp_path / "models" / "models--google--gemma-2-27b-it" / "manifest.yaml"
+        p2 = tmp_path / "models" / "models--meta-llama--Llama-3-8b" / "manifest.yaml"
         assert p1.exists()
         assert p2.exists()
         assert yaml.safe_load(p1.read_text())["model_id"] == "google/gemma-2-27b-it"
@@ -267,7 +267,7 @@ class TestWriteModelManifest:
 class TestDownloadModel:
     def _setup_mocks(self, tmp_path, model_id="google/gemma-2-27b-it", gated=True):
         """Set up patches for a successful download."""
-        model_dir = tmp_path / "models" / model_id.replace("/", "--")
+        model_dir = tmp_path / "models" / ("models--" + model_id.replace("/", "--"))
         model_dir.mkdir(parents=True)
         # Create fake model files
         (model_dir / "config.json").write_text("{}")
@@ -342,3 +342,27 @@ class TestDownloadModel:
             from hf_offline.models import download_model
             _, info = download_model("google/gemma-2-27b-it", tmp_path, token=None)
         assert info.size_bytes > 0
+
+
+class TestMaterializeSnapshots:
+    def test_symlinks_become_files_and_blobs_removed(self, tmp_path):
+        from hf_offline.models import _materialize_snapshots
+
+        d = tmp_path / "models--a--b"
+        (d / "blobs").mkdir(parents=True)
+        (d / "snapshots" / "rev").mkdir(parents=True)
+        (d / "blobs" / "h1").write_text("w")
+        (d / "snapshots" / "rev" / "w.bin").symlink_to(d / "blobs" / "h1")
+        _materialize_snapshots(d)
+        f = d / "snapshots" / "rev" / "w.bin"
+        assert f.is_file() and not f.is_symlink() and f.read_text() == "w"
+        assert not (d / "blobs").exists()
+
+
+def test_cli_env_flows_into_values_yaml(tmp_path):
+    import yaml
+    from hf_offline.helm import generate_chart
+    from hf_offline.space import SpaceInfo
+
+    out = generate_chart(SpaceInfo(space_id="o/s", owner="o", name="s", sdk="gradio"), tmp_path, env={"A": "1"})
+    assert yaml.safe_load((out / "values.yaml").read_text())["env"] == {"A": "1"}

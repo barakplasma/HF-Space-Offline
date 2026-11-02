@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import click
 from rich.console import Console
 
@@ -85,6 +83,13 @@ def main() -> None:
     help="Additional container images to export. Can be specified multiple times.",
 )
 @click.option(
+    "--env",
+    "env_vars",
+    multiple=True,
+    metavar="KEY=VALUE",
+    help="Extra env var for the app container (e.g. INDRA_OCR_MODEL_DIR=/models/...). Repeatable.",
+)
+@click.option(
     "--skip-images",
     is_flag=True,
     default=False,
@@ -105,6 +110,7 @@ def download(
     space_image: str | None,
     extra_image: tuple[str, ...],
     skip_images: bool,
+    env_vars: tuple[str, ...],
 ) -> None:
     """Download a HuggingFace Space and all dependencies for offline deployment.
 
@@ -150,6 +156,7 @@ def download(
             skip_images=skip_images,
             extra_images=list(extra_image),
             space_image=space_image,
+            env=dict(kv.split("=", 1) for kv in env_vars),
         )
         console.print(f"\n[bold green]Done![/] Bundle at: {bundle_path}")
     except KeyboardInterrupt:
@@ -197,7 +204,7 @@ def inspect(bundle_dir: str) -> None:
 
     steps = manifest.get("deploy_steps", [])
     if steps:
-        console.print(f"\n[bold]Deploy steps:[/]")
+        console.print("\n[bold]Deploy steps:[/]")
         for step in steps:
             console.print(f"  {step}")
 

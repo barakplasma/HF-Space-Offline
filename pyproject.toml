@@ -26,3 +26,7 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.1",
 ]
+
+[tool.ruff.lint]
+# Deliberate: network/HF calls are best-effort and fall through to defaults.
+ignore = ["BLE001", "S110", "S112", "PLW1510", "RUF059"]

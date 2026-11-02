@@ -179,9 +179,9 @@ def generate_dockerfile(info: SpaceInfo, space_dir: Path) -> Path:
         return dockerfile_path
 
     if info.sdk == "gradio":
-        content = _gradio_dockerfile(info)
+        content = _gradio_dockerfile(info, space_dir)
     elif info.sdk == "streamlit":
-        content = _streamlit_dockerfile(info)
+        content = _streamlit_dockerfile(info, space_dir)
     else:
         content = _generic_dockerfile(info)
 
@@ -190,10 +190,34 @@ def generate_dockerfile(info: SpaceInfo, space_dir: Path) -> Path:
     return dockerfile_path
 
 
-def _gradio_dockerfile(info: SpaceInfo) -> str:
+def _install_block(info: SpaceInfo, space_dir: Path | None, framework: str) -> str:
+    """apt packages (packages.txt), requirements.txt, and the SDK package itself.
+
+    HF Spaces install the sdk package (gradio/streamlit) from README metadata and
+    apt packages from packages.txt; requirements.txt usually omits both.
+    """
+    lines = []
+    if space_dir and (space_dir / "packages.txt").exists():
+        lines.append(
+            "COPY packages.txt .\n"
+            "RUN apt-get update && apt-get install -y --no-install-recommends "
+            "$(grep -vE '^\\s*(#|$)' packages.txt) && rm -rf /var/lib/apt/lists/*"
+        )
+    reqs_text = ""
+    if info.has_requirements:
+        lines.append("COPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt")
+        if space_dir:
+            reqs_text = (space_dir / "requirements.txt").read_text(encoding="utf-8", errors="ignore")
+    if not re.search(rf"^\s*{framework}\b", reqs_text, re.IGNORECASE | re.MULTILINE):
+        pin = f"=={info.sdk_version}" if info.sdk_version else ""
+        lines.append(f"RUN pip install --no-cache-dir {framework}{pin}")
+    return "\n".join(lines)
+
+
+def _gradio_dockerfile(info: SpaceInfo, space_dir: Path | None = None) -> str:
     python_ver = info.python_version or "3.10"
     app_file = info.app_file or "app.py"
-    reqs = "COPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt" if info.has_requirements else "RUN pip install --no-cache-dir gradio"
+    reqs = _install_block(info, space_dir, "gradio")
 
     return f"""\
 FROM python:{python_ver}-slim
@@ -213,10 +237,10 @@ CMD ["python", "{app_file}"]
 """
 
 
-def _streamlit_dockerfile(info: SpaceInfo) -> str:
+def _streamlit_dockerfile(info: SpaceInfo, space_dir: Path | None = None) -> str:
     python_ver = info.python_version or "3.10"
     app_file = info.app_file or "app.py"
-    reqs = "COPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt" if info.has_requirements else "RUN pip install --no-cache-dir streamlit"
+    reqs = _install_block(info, space_dir, "streamlit")
 
     return f"""\
 FROM python:{python_ver}-slim

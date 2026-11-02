@@ -486,3 +486,29 @@ class TestGenerateDockerfile:
         from hf_offline.space import generate_dockerfile
         df = generate_dockerfile(self._info("gradio", app_file="my_app.py"), app_dir)
         assert "my_app.py" in df.read_text()
+
+
+class TestDockerfileInstallBlock:
+    def _gen(self, tmp_path, sdk="gradio", ver="5.1.0", reqs=None, pkgs=None):
+        from hf_offline.space import SpaceInfo, generate_dockerfile
+
+        if reqs is not None:
+            (tmp_path / "requirements.txt").write_text(reqs)
+        if pkgs is not None:
+            (tmp_path / "packages.txt").write_text(pkgs)
+        info = SpaceInfo(space_id="o/s", owner="o", name="s", sdk=sdk, sdk_version=ver,
+                         has_requirements=reqs is not None)
+        return generate_dockerfile(info, tmp_path).read_text()
+
+    def test_apt_packages_installed(self, tmp_path):
+        d = self._gen(tmp_path, reqs="pytesseract\n", pkgs="tesseract-ocr\n# c\npoppler-utils\n")
+        assert "apt-get install" in d and "COPY packages.txt" in d
+
+    def test_sdk_pinned_when_missing_from_requirements(self, tmp_path):
+        assert "pip install --no-cache-dir gradio==5.1.0" in self._gen(tmp_path, reqs="pillow\n")
+
+    def test_sdk_not_duplicated_when_in_requirements(self, tmp_path):
+        assert "gradio==" not in self._gen(tmp_path, reqs="Gradio>=4\n")
+
+    def test_no_packages_no_apt(self, tmp_path):
+        assert "apt-get" not in self._gen(tmp_path, reqs="pillow\n")

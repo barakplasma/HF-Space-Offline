@@ -7,14 +7,18 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 from rich.panel import Panel
 
 from hf_offline.helm import generate_chart
 from hf_offline.images import export_space_images
 from hf_offline.model_card import render_model_card_html
-from hf_offline.models import ModelInfo, download_model, write_model_manifest
+from hf_offline.models import (
+    ModelInfo,
+    download_model,
+    model_dir_name,
+    write_model_manifest,
+)
 from hf_offline.space import SpaceInfo, clone_space, generate_dockerfile
 
 console = Console()
@@ -36,6 +40,7 @@ def create_bundle(
     skip_images: bool = False,
     extra_images: list[str] | None = None,
     space_image: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> Path:
     """Create a complete offline bundle for a HuggingFace Space.
 
@@ -133,6 +138,7 @@ def create_bundle(
         gpu_type=gpu_type,
         storage_size=storage_size,
         image_registry=image_registry,
+        env=env,
     )
 
     # -----------------------------------------------------------------------
@@ -198,7 +204,7 @@ def _build_manifest(
                 "pipeline_tag": m.pipeline_tag,
                 "gated": m.gated,
                 "size_bytes": m.size_bytes,
-                "path": f"models/{m.model_id.replace('/', '--')}",
+                "path": f"models/{model_dir_name(m.model_id)}",
             }
             for m in model_infos
         ],
@@ -235,19 +241,19 @@ def _print_summary(
     size_str = _human_size(total_model_size)
 
     lines = [
-        f"[bold green]Bundle complete![/]\n",
+        "[bold green]Bundle complete![/]\n",
         f"  Space:      [cyan]{space_info.space_id}[/] ({space_info.sdk})",
         f"  Models:     {len(model_infos)} ({size_str})",
         f"  Images:     {len(saved_images)} tarballs",
         f"  Location:   [cyan]{dest}[/]",
         "",
         "[bold]Bundle contents:[/]",
-        f"  app/          Space application code + Dockerfile",
-        f"  models/       Model weights (mount as PVC / upload to S3)",
-        f"  images/       Container image tarballs (load with skopeo)",
-        f"  chart/        Helm chart for Kubernetes deployment",
-        f"  model-card.html  Rendered model card",
-        f"  manifest.json    Bundle metadata",
+        "  app/          Space application code + Dockerfile",
+        "  models/       Model weights (mount as PVC / upload to S3)",
+        "  images/       Container image tarballs (load with skopeo)",
+        "  chart/        Helm chart for Kubernetes deployment",
+        "  model-card.html  Rendered model card",
+        "  manifest.json    Bundle metadata",
         "",
         "[bold]Next steps:[/]",
         "  1. Transfer this folder to your air-gapped environment",
