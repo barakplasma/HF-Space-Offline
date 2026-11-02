@@ -228,6 +228,11 @@ WORKDIR /app
 
 COPY . .
 
+# OpenShift runs containers as an arbitrary UID in group 0
+ENV HOME=/tmp/home
+RUN mkdir -p $HOME && chgrp -R 0 /app $HOME && chmod -R g=u /app $HOME
+USER 1001
+
 ENV GRADIO_SERVER_NAME=0.0.0.0
 ENV GRADIO_SERVER_PORT={info.port}
 
@@ -251,6 +256,11 @@ WORKDIR /app
 
 COPY . .
 
+# OpenShift runs containers as an arbitrary UID in group 0
+ENV HOME=/tmp/home
+RUN mkdir -p $HOME && chgrp -R 0 /app $HOME && chmod -R g=u /app $HOME
+USER 1001
+
 EXPOSE {info.port}
 
 CMD ["streamlit", "run", "{app_file}", "--server.address=0.0.0.0", "--server.port={info.port}"]
@@ -270,6 +280,11 @@ COPY requirements.txt* ./
 RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi
 
 COPY . .
+
+# OpenShift runs containers as an arbitrary UID in group 0
+ENV HOME=/tmp/home
+RUN mkdir -p $HOME && chgrp -R 0 /app $HOME && chmod -R g=u /app $HOME
+USER 1001
 
 EXPOSE {info.port}
 

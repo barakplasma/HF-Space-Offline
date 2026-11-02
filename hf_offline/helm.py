@@ -71,6 +71,7 @@ def generate_chart(
     _write_deployment(templates_dir, chart_meta)
     _write_service(templates_dir, chart_meta)
     _write_ingress(templates_dir, chart_meta)
+    _write_route(templates_dir, chart_meta)
     _write_pvc(templates_dir, chart_meta)
     _write_secrets(templates_dir, chart_meta)
     _write_configmap(templates_dir, chart_meta)
@@ -134,6 +135,9 @@ def _write_values_yaml(chart_dir: Path, meta: dict) -> None:
                 "prefix": meta["s3_prefix"],
                 "accessKey": "",
                 "secretKey": "",
+                # Existing Secret with AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+                # (the format of an OpenShift AI "data connection").
+                "existingSecret": "",
             },
             "pvc": {
                 "enabled": True,
@@ -180,7 +184,17 @@ def _write_values_yaml(chart_dir: Path, meta: dict) -> None:
             "serve": {
                 "enabled": False,
                 "port": 8080,
+                "image": "nginxinc/nginx-unprivileged:alpine",
             },
+        },
+
+        "imagePullSecrets": [],
+
+        # Set true (or use -f values-openshift.yaml) for OpenShift / OpenShift AI:
+        # Route instead of Ingress, restricted-SCC-safe security contexts.
+        "openshift": {
+            "enabled": False,
+            "route": {"host": "", "tlsTermination": "edge", "insecurePolicy": "Redirect"},
         },
 
         "initContainer": {
@@ -194,6 +208,17 @@ def _write_values_yaml(chart_dir: Path, meta: dict) -> None:
 
     (chart_dir / "values.yaml").write_text(
         yaml.dump(values, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
+    overlay = {
+        "openshift": {"enabled": True},
+        "ingress": {"enabled": False},
+        # GPU nodes on OpenShift are usually tainted nvidia.com/gpu
+        "tolerations": [{"key": "nvidia.com/gpu", "operator": "Exists", "effect": "NoSchedule"}],
+    }
+    (chart_dir / "values-openshift.yaml").write_text(
+        "# helm install <name> chart/ -f chart/values-openshift.yaml\n"
+        + yaml.dump(overlay, default_flow_style=False, sort_keys=False),
         encoding="utf-8",
     )
 
@@ -267,6 +292,17 @@ spec:
       labels:
         {{- include "space.selectorLabels" . | nindent 8 }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.openshift.enabled }}
+      # restricted-v2 SCC assigns the UID and fsGroup itself; leave them unset
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -291,17 +327,25 @@ spec:
             - |
               mc alias set s3store {{ .Values.models.s3.endpoint }} $(S3_ACCESS_KEY) $(S3_SECRET_KEY)
               mc mirror --overwrite s3store/{{ .Values.models.s3.bucket }}/{{ .Values.models.s3.prefix }} /models/
+          {{- if .Values.openshift.enabled }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          {{- end }}
           env:
+            - name: MC_CONFIG_DIR
+              value: /tmp/.mc
             - name: S3_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "space.fullname" . }}-secrets
-                  key: s3-access-key
+                  name: {{ .Values.models.s3.existingSecret | default (printf "%s-secrets" (include "space.fullname" .)) }}
+                  key: {{ if .Values.models.s3.existingSecret }}AWS_ACCESS_KEY_ID{{ else }}s3-access-key{{ end }}
             - name: S3_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "space.fullname" . }}-secrets
-                  key: s3-secret-key
+                  name: {{ .Values.models.s3.existingSecret | default (printf "%s-secrets" (include "space.fullname" .)) }}
+                  key: {{ if .Values.models.s3.existingSecret }}AWS_SECRET_ACCESS_KEY{{ else }}s3-secret-key{{ end }}
           volumeMounts:
             - name: models
               mountPath: /models
@@ -311,6 +355,12 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.openshift.enabled }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.space.port }}
@@ -404,7 +454,7 @@ spec:
 
 def _write_ingress(templates_dir: Path, meta: dict) -> None:
     content = """\
-{{- if .Values.ingress.enabled }}
+{{- if and .Values.ingress.enabled (not .Values.openshift.enabled) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -521,6 +571,32 @@ data:
 # templates/model-card.yaml  (optional nginx serving the model card HTML)
 # ---------------------------------------------------------------------------
 
+def _write_route(templates_dir: Path, meta: dict) -> None:
+    content = """\
+{{- if .Values.openshift.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "space.fullname" . }}
+  labels:
+    {{- include "space.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.openshift.route.host }}
+  host: {{ . | quote }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "space.fullname" . }}
+  port:
+    targetPort: http
+  tls:
+    termination: {{ .Values.openshift.route.tlsTermination }}
+    insecureEdgeTerminationPolicy: {{ .Values.openshift.route.insecurePolicy }}
+{{- end }}
+"""
+    (templates_dir / "route.yaml").write_text(content, encoding="utf-8")
+
+
 def _write_model_card_serving(templates_dir: Path, meta: dict) -> None:
     content = """\
 {{- if .Values.modelCard.serve.enabled }}
@@ -554,11 +630,21 @@ spec:
         {{- include "space.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: model-card
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: nginx
-          image: nginx:alpine
+          image: {{ .Values.modelCard.serve.image }}
+          {{- if .Values.openshift.enabled }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          {{- end }}
           ports:
-            - containerPort: 80
+            - containerPort: 8080
           volumeMounts:
             - name: html
               mountPath: /usr/share/nginx/html
@@ -578,7 +664,7 @@ spec:
   type: ClusterIP
   ports:
     - port: {{ .Values.modelCard.serve.port }}
-      targetPort: 80
+      targetPort: 8080
       protocol: TCP
   selector:
     {{- include "space.selectorLabels" . | nindent 4 }}

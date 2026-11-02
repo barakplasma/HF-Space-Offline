@@ -397,3 +397,32 @@ class TestMultipleModels:
         # (it's computed into values.yaml model list)
         values = yaml.safe_load((chart_dir / "values.yaml").read_text())
         assert "google/gemma-2-27b-it" in values["models"]["ids"]
+
+
+class TestOpenShift:
+    def _chart(self, tmp_path):
+        from hf_offline.helm import generate_chart
+        from hf_offline.space import SpaceInfo
+
+        return generate_chart(SpaceInfo(space_id="o/s", owner="o", name="s", sdk="gradio"), tmp_path)
+
+    def test_overlay_enables_openshift(self, tmp_path):
+        import yaml
+
+        c = self._chart(tmp_path)
+        v = yaml.safe_load((c / "values-openshift.yaml").read_text())
+        assert v["openshift"]["enabled"] is True and v["ingress"]["enabled"] is False
+        assert v["tolerations"][0]["key"] == "nvidia.com/gpu"
+
+    def test_default_values_keep_openshift_off(self, tmp_path):
+        import yaml
+
+        c = self._chart(tmp_path)
+        assert yaml.safe_load((c / "values.yaml").read_text())["openshift"]["enabled"] is False
+
+    def test_route_and_scc_safe_deployment(self, tmp_path):
+        c = self._chart(tmp_path)
+        assert "kind: Route" in (c / "templates" / "route.yaml").read_text()
+        d = (c / "templates" / "deployment.yaml").read_text()
+        assert "runAsNonRoot: true" in d and "drop: [ALL]" in d
+        assert "runAsUser" not in d  # SCC must assign the UID
