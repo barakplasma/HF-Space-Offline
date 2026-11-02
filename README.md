@@ -128,6 +128,28 @@ Then deploy:
 helm install my-space bundle-myorg--my-space/chart/
 ```
 
+## OpenShift / OpenShift AI (disconnected)
+
+The chart ships a `values-openshift.yaml` overlay. It swaps the Ingress for a `Route`, adds
+restricted-SCC-safe security contexts (non-root, arbitrary UID, all capabilities dropped,
+no `runAsUser`/`fsGroup`), and tolerates the usual `nvidia.com/gpu` taint. Generated
+Dockerfiles are arbitrary-UID safe (group-0 writable, `HOME=/tmp/home`, `USER 1001`).
+
+```bash
+# 1. Mirror images into the cluster registry (app image + minio/mc, plus nginx-unprivileged if serving the model card)
+# 2. Upload models/ to your S3 (an OpenShift AI data connection works: pass its Secret name)
+helm install myapp chart/ -f chart/values-openshift.yaml \
+  --set image.repository=image-registry.openshift-image-registry.svc:5000/<ns>/myapp \
+  --set initContainer.image=<mirror>/minio/mc:latest \
+  --set models.s3.endpoint=http://minio.<ns>.svc:9000 \
+  --set models.s3.existingSecret=<data-connection-secret> \
+  --set 'imagePullSecrets[0].name=<pull-secret>'
+```
+
+This deploys the Space as a regular Deployment + Route inside an OpenShift AI project. It is
+not a KServe `InferenceService`: Gradio/Streamlit apps are UIs, not model servers. Spaces that
+ship their own Dockerfile are kept as-is and must also run as a non-root, arbitrary UID.
+
 ## Helm chart features
 
 - **Init container** syncs models from S3 to PVC on startup (using `minio/mc`)

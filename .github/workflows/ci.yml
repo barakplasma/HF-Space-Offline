@@ -46,3 +46,5 @@ jobs:
           PY
       - run: helm lint out/chart
       - run: helm template t out/chart --set hfToken=x | grep -q HF_HUB_OFFLINE
+      - run: helm lint out/chart -f out/chart/values-openshift.yaml
+      - run: helm template t out/chart -f out/chart/values-openshift.yaml | grep -q "kind: Route"
