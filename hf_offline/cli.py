@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import click
 from rich.console import Console
 
@@ -206,7 +204,7 @@ def inspect(bundle_dir: str) -> None:
 
     steps = manifest.get("deploy_steps", [])
     if steps:
-        console.print(f"\n[bold]Deploy steps:[/]")
+        console.print("\n[bold]Deploy steps:[/]")
         for step in steps:
             console.print(f"  {step}")
 

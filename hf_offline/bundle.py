@@ -7,7 +7,6 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 from rich.panel import Panel
 
@@ -242,19 +241,19 @@ def _print_summary(
     size_str = _human_size(total_model_size)
 
     lines = [
-        f"[bold green]Bundle complete![/]\n",
+        "[bold green]Bundle complete![/]\n",
         f"  Space:      [cyan]{space_info.space_id}[/] ({space_info.sdk})",
         f"  Models:     {len(model_infos)} ({size_str})",
         f"  Images:     {len(saved_images)} tarballs",
         f"  Location:   [cyan]{dest}[/]",
         "",
         "[bold]Bundle contents:[/]",
-        f"  app/          Space application code + Dockerfile",
-        f"  models/       Model weights (mount as PVC / upload to S3)",
-        f"  images/       Container image tarballs (load with skopeo)",
-        f"  chart/        Helm chart for Kubernetes deployment",
-        f"  model-card.html  Rendered model card",
-        f"  manifest.json    Bundle metadata",
+        "  app/          Space application code + Dockerfile",
+        "  models/       Model weights (mount as PVC / upload to S3)",
+        "  images/       Container image tarballs (load with skopeo)",
+        "  chart/        Helm chart for Kubernetes deployment",
+        "  model-card.html  Rendered model card",
+        "  manifest.json    Bundle metadata",
         "",
         "[bold]Next steps:[/]",
         "  1. Transfer this folder to your air-gapped environment",
