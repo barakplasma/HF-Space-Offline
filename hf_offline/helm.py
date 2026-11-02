@@ -297,7 +297,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.openshift.enabled }}
-      # restricted-v2 SCC: arbitrary UID in group 0 (do not set runAsUser/fsGroup)
+      # restricted-v2 SCC assigns the UID and fsGroup itself; leave them unset
       securityContext:
         runAsNonRoot: true
         seccompProfile:
